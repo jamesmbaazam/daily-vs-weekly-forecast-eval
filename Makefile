@@ -82,7 +82,7 @@ ${FIGDIR}/daily_vs_weekly_%.png: R/fig_daily_vs_weekly.R ${DATDIR}/daily_%.rds $
 	$(call R)
 
 ${FIGDIR}/fig_panel_scores_%.png: \
-	R/fig_panel.R \
+	R/fig_panel_scores.R \
 	${DATDIR}/daily_%.rds \
 	${DATDIR}/weekly_%.rds \
 	${OUTDIR}/score_%.rds \
@@ -94,7 +94,7 @@ ${FIGDIR}/fig_panel_scores_%.png: \
 	$(call R)
 
 ${FIGDIR}/fig_panel_diagnostics_%.png: \
-	R/fig_panel_ratchets.R \
+	R/fig_panel_diagnostics.R \
 	${DATDIR}/daily_%.rds \
 	${DATDIR}/weekly_%.rds \
 	${OUTDIR}/forecast_daily_%.rds \
@@ -128,7 +128,7 @@ all_scores: $(patsubst %,${OUTDIR}/score_%.rds,${PROVINCES} RSA)
 
 ## Main figure targets
 all_scores_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES} RSA)
-all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores%.png,${PROVINCES} RSA)
+all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES} RSA)
 all_dvsw_figs: $(patsubst %,${FIGDIR}/daily_vs_weekly_%.png,${PROVINCES})
 
 test: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${ONEPROV})
