@@ -83,7 +83,7 @@ join_and_score(weekly_fore_dt, daily_ref_dt) |> dtextract("weekly", "daily"),
 join_and_score(weekly_fore_dt, weekly_ref_dt) |> dtextract("weekly", "weekly"),
 
 # weekly-scale forecasts vs weekly data
-join_and_score(special_fore_dt, weekly_ref_dt) |> dtextract("rescale", "weekly")
+join_and_score(rescale_fore_dt, weekly_ref_dt) |> dtextract("rescale", "weekly")
 
 )
 
