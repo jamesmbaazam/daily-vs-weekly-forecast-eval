@@ -21,7 +21,7 @@ OUTDIR := ${REFDIR}/output
 # convenience definitions
 # use: $(call R[, optional other arguments])
 R = $(strip Rscript $^ $(1) $@)
-wget = wget -O $@ $(1)
+wget = curl -o $@ $(1)
 
 RENV = .Rprofile
 
@@ -109,7 +109,10 @@ WEEKLYDAT_PAT = ${DATDIR}/weekly_%.rds
 # pattern = province_(daily|weekly|rescale)
 FORECAST_PAT = ${OUTDIR}/forecast_%.rds
 
-${FORECAST_PAT}: R/pipeline_main.R ${DATDIR}/%.rds ${SHARED_INPUTS} | ${OUTDIR}
+${OUTDIR}/forecast_daily_%.rds: R/pipeline_main.R ${DATDIR}/daily_%.rds ${SHARED_INPUTS} | ${OUTDIR}
+	$(call R)
+
+${OUTDIR}/forecast_weekly_%.rds: R/pipeline_main.R ${DATDIR}/weekly_%.rds ${SHARED_INPUTS} | ${OUTDIR}
 	$(call R)
 
 ${OUTDIR}/forecast_rescale_%.rds: R/pipeline_rescaled_weekly.R ${DATDIR}/weekly_%.rds ${SHARED_INPUTS} | ${OUTDIR}
