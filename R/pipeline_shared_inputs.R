@@ -1,4 +1,49 @@
+####################################
+# Functions
+####################################
+#' Extract columns
+#'
+#' @param dt The results data.table
+#' @param fct The forecast scale. One of c("daily", "weekly", "rescale").
+#' @param dat The reference data scale. One of c("daily", "weekly")
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+dtextract <- function(dt, fct, dat) {
+    dt[,
+       .(date, crps, forecast = fct, data = dat),
+       by = slide
+    ]
+}
 
+#' Join forecasts to reference data and score forecasts
+#'
+#' @param fore_dt Forecasts dt
+#' @param ref_dt Data dt
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+join_and_score <- function(fore_dt, ref_dt) {
+    fore_dt[
+        ref_dt, on = .(date), .(sample, slide, date, prediction, true_value),
+        nomatch = 0
+    ][,
+      csum := cumsum(prediction), by = .(sample, slide)
+    ][!is.na(true_value),
+      .(date, prediction = c(csum[1], diff(csum)), true_value),
+      by = .(sample, slide)
+    ] |>
+        as_forecast_sample(
+            predicted = "prediction",
+            observed = "true_value",
+            sample_id = "sample"
+        ) |>
+        score(metrics = list("crps" = crps_sample))
+}
 #' Trim leading zeros
 #'
 #' @param init_dt the raw dt
@@ -79,14 +124,6 @@ get_rstan_diagnostics <- function(fit) {
 	return(diagnostics[])
 }
 
-control_opts <- list(adapt_delta = 0.8, max_treedepth = 10, stepsize = 0.1)
-
-stan <- stan_opts(
-	cores = parallel::detectCores() - 2,
-	samples = 5000,
-	control = control_opts
-)
-
 #' Define new parameter values for tuning the model
 #'
 #' @param stan_cfg Current stan parameter values
@@ -102,3 +139,42 @@ ratchet_control <- function(stan_cfg) within(stan_cfg, {
         stepsize <- stepsize * 0.5
     })
 })
+
+
+#' Load forecasts, diagnostics, or timings, bind by row, and add the type id
+#' as a column
+#'
+#' @param files Vector of file paths
+#' @param out_type String; the output type. One of c("forecasts", "timing",
+#' "diagnostics")
+#'
+#' @returns A single dt with all results bound together with a type column
+#' identifying the forecast scale
+#' @export
+#'
+#' @examples
+read_bulk_and_rbind <- function(files, out_type) {
+    # Extract the target labels
+    target_labels <- gsub("^([^_]+)_([^_]+)_([^.]+)\\.rds$", "\\2", files)
+    files |>
+        setNames(target_labels) |> # Must always make sure the inputs are in that order
+        lapply(readRDS) |>
+        lapply(\(obj) {
+            rbindlist(obj[[out_type]])
+        }) |>
+        rbindlist(idcol = "type", fill = TRUE)
+}
+
+####################################
+# Inputs
+####################################
+
+# Starting stan controls to be retuned
+control_opts <- list(adapt_delta = 0.8, max_treedepth = 10, stepsize = 0.1)
+
+# EpiNow2 stan options
+stan <- stan_opts(
+    cores = parallel::detectCores() - 2,
+    samples = 5000,
+    control = control_opts
+)

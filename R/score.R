@@ -25,52 +25,6 @@ weekly_ref_dt <- readRDS(.args[2]) |> setnames("confirm", "true_value")
 daily_fore_dt <- readRDS(.args[3])$forecast |> rbindlist() |> setnames("value", "prediction")
 weekly_fore_dt <- readRDS(.args[4])$forecast |> rbindlist() |> setnames("value", "prediction")
 rescale_fore_dt <- readRDS(.args[5])$forecast |> rbindlist() |> setnames("value", "prediction")
-####################################
-# Functions
-####################################
-#' Extract columns
-#'
-#' @param dt
-#' @param fct
-#' @param dat
-#'
-#' @returns
-#' @export
-#'
-#' @examples
-dtextract <- function(dt, fct, dat) {
-    dt[,
-       .(date, crps, forecast = fct, data = dat),
-       by = slide
-    ]
-}
-
-#' Join forecasts to reference data and score forecasts
-#'
-#' @param fore_dt Forecasts dt
-#' @param ref_dt Data dt
-#'
-#' @returns
-#' @export
-#'
-#' @examples
-join_and_score <- function(fore_dt, ref_dt) {
-    fore_dt[
-        ref_dt, on = .(date), .(sample, slide, date, prediction, true_value),
-        nomatch = 0
-    ][,
-      csum := cumsum(prediction), by = .(sample, slide)
-    ][!is.na(true_value),
-      .(date, prediction = c(csum[1], diff(csum)), true_value),
-      by = .(sample, slide)
-    ] |>
-        as_forecast_sample(
-            predicted = "prediction",
-            observed = "true_value",
-            sample_id = "sample"
-        ) |>
-        score(metrics = list("crps" = crps_sample))
-}
 
 # wherever the true value is NA, we are assuming the prediction should be
 # accumulated to wherever the next observation occurs
