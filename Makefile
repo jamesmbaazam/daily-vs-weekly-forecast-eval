@@ -56,6 +56,9 @@ ${DATDIR}/intermediate.rds: R/import.R ${DATDIR}/raw.csv | ${DATDIR}
 # n.b. raw data also has an UNKNOWN
 PROVINCES := GP WC EC KZN FS LP MP NC NW
 
+# Shared inputs
+SHARED_INPUTS = R/.R
+
 # define all possible extracts
 $(foreach agg,daily weekly,$(foreach tar,${PROVINCES},$(eval EXTRACTS += ${DATDIR}/${agg}_${tar}.rds)))
 
@@ -78,10 +81,7 @@ ${FIGDIR}/incidence.png: R/fig_incidence.R ${DATDIR}/intermediate.rds | ${FIGDIR
 ${FIGDIR}/daily_vs_weekly_%.png: R/fig_daily_vs_weekly.R ${DATDIR}/daily_%.rds ${DATDIR}/weekly_%.rds | ${FIGDIR}
 	$(call R)
 
-${FIGDIR}/benchmarks_%.png: R/fig_timing.R ${OUTDIR}/forecast_daily_%.rds ${OUTDIR}/forecast_weekly_%.rds ${OUTDIR}/forecast_rescale_%.rds | ${FIGDIR}
-	$(call R)
-
-${FIGDIR}/fig_panel_%.png: \
+${FIGDIR}/fig_panel_scores_%.png: \
 	R/fig_panel.R \
 	${DATDIR}/daily_%.rds \
 	${DATDIR}/weekly_%.rds \
@@ -89,30 +89,19 @@ ${FIGDIR}/fig_panel_%.png: \
 	${OUTDIR}/forecast_daily_%.rds \
 	${OUTDIR}/forecast_weekly_%.rds \
 	${OUTDIR}/forecast_rescale_%.rds \
-	${OUTDIR}/diagnostics_%.csv | ${FIGDIR}
+	${OUTDIR}/diagnostics_%.csv \
+	${SHARED_INPUTS} | ${FIGDIR}
 	$(call R)
 
-${FIGDIR}/fig_panel_ratchets_%.png: \
+${FIGDIR}/fig_panel_diagnostics_%.png: \
 	R/fig_panel_ratchets.R \
 	${DATDIR}/daily_%.rds \
 	${DATDIR}/weekly_%.rds \
 	${OUTDIR}/forecast_daily_%.rds \
 	${OUTDIR}/forecast_weekly_%.rds \
-	${OUTDIR}/forecast_rescale_%.rds | ${FIGDIR}
+	${OUTDIR}/forecast_rescale_%.rds \
+	${SHARED_INPUTS} | ${FIGDIR}
 	$(call R)
-
-${FIGDIR}/score_scatter_%.png: R/fig_crps.R ${OUTDIR}/score_%.rds
-	$(call R)
-
-alldvswfigs: $(patsubst %,${FIGDIR}/daily_vs_weekly_%.png,${PROVINCES})
-
-allbenchmarkfigs: $(patsubst %,${FIGDIR}/benchmarks_%.png,${PROVINCES})
-
-allpanelfigs: $(patsubst %,${FIGDIR}/fig_panel_%.png,${PROVINCES})
-
-allratchetfigs: $(patsubst %,${FIGDIR}/fig_panel_ratchets_%.png,${PROVINCES})
-
-allscorescatterfigs: $(patsubst %,${FIGDIR}/score_scatter_%.png,${PROVINCES})
 
 # pattern = some province
 DAILYDAT_PAT = ${DATDIR}/daily_%.rds
@@ -120,26 +109,28 @@ WEEKLYDAT_PAT = ${DATDIR}/weekly_%.rds
 # pattern = province_(daily|weekly|rescale)
 FORECAST_PAT = ${OUTDIR}/forecast_%.rds
 
-${FORECAST_PAT}: R/pipeline_main.R ${DATDIR}/%.rds R/pipeline_shared_inputs.R | ${OUTDIR}
+${FORECAST_PAT}: R/pipeline_main.R ${DATDIR}/%.rds ${SHARED_INPUTS} | ${OUTDIR}
 	$(call R)
 
-${OUTDIR}/forecast_rescale_%.rds: R/pipeline_rescaled_weekly.R ${DATDIR}/weekly_%.rds R/pipeline_shared_inputs.R | ${OUTDIR}
+${OUTDIR}/forecast_rescale_%.rds: R/pipeline_rescaled_weekly.R ${DATDIR}/weekly_%.rds ${SHARED_INPUTS} | ${OUTDIR}
 	$(call R)
 
-${OUTDIR}/score_%.rds: R/score.R ${DATDIR}/daily_%.rds ${DATDIR}/weekly_%.rds ${OUTDIR}/forecast_daily_%.rds ${OUTDIR}/forecast_weekly_%.rds ${OUTDIR}/forecast_rescale_%.rds
+${OUTDIR}/score_%.rds: R/score.R ${DATDIR}/daily_%.rds ${DATDIR}/weekly_%.rds ${OUTDIR}/forecast_daily_%.rds ${OUTDIR}/forecast_weekly_%.rds ${OUTDIR}/forecast_rescale_%.rds ${SHARED_INPUTS}
 	$(call R)
 
-${OUTDIR}/diagnostics_%.csv: R/diagnostics.R ${OUTDIR}/forecast_daily_%.rds ${OUTDIR}/forecast_weekly_%.rds ${OUTDIR}/forecast_rescale_%.rds
+${OUTDIR}/diagnostics_%.csv: R/diagnostics.R ${OUTDIR}/forecast_daily_%.rds ${OUTDIR}/forecast_weekly_%.rds ${OUTDIR}/forecast_rescale_%.rds ${SHARED_INPUTS}
 	$(call R)
 
 # all targets at once
-alldiagnostics: $(patsubst %,${OUTDIR}/diagnostics_%.csv,${PROVINCES} RSA)
-allforecasts: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${PROVINCES} RSA) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${PROVINCES} RSA) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${PROVINCES} RSA)
-allscores: $(patsubst %,${OUTDIR}/score_%.rds,${PROVINCES} RSA)
+all_diagnostics: $(patsubst %,${OUTDIR}/diagnostics_%.csv,${PROVINCES} RSA)
+all_forecasts: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${PROVINCES} RSA) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${PROVINCES} RSA) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${PROVINCES} RSA)
+all_scores: $(patsubst %,${OUTDIR}/score_%.rds,${PROVINCES} RSA)
 
-## Main target
-allpanelfigs: $(patsubst %,${FIGDIR}/fig_panel_%.png,${PROVINCES} RSA)
+## Main figure targets
+all_scores_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES} RSA)
+all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores%.png,${PROVINCES} RSA)
+all_dvsw_figs: $(patsubst %,${FIGDIR}/daily_vs_weekly_%.png,${PROVINCES})
 
 test: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${ONEPROV})
 
-endrule: allpanelfigs
+endrule: all_scores_panel_figs
