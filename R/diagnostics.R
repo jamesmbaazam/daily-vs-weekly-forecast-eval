@@ -1,7 +1,7 @@
 library(data.table)
 
 .args <- if (interactive()) {
-    .prov <- "WC"
+    .prov <- "GP"
     sprintf(
         c(
             file.path("local/output",
@@ -19,9 +19,7 @@ library(data.table)
 # Get diagnostic data
 files <- .args[1:3]
 # Extract the forecast target
-targets_labels <- gsub("^([^_]+)_([^_]+)_([^.]+)\\.rds$", "\\2", files)
-# Replace "special" with "rescale"; old name -> new name
-target_labels <- ifelse(targets_labels == "special", "rescale", targets_labels)
+target_labels <- gsub("^([^_]+)_([^_]+)_([^.]+)\\.rds$", "\\2", files)
 
 diagnostics_dt_combined <- files |>
     setNames(target_labels) |>
