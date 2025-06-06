@@ -4,7 +4,7 @@ library(patchwork)
 
 .args <- if (interactive()) {
     .prov <- "GP"
-    sprintf(
+    .tmp <- sprintf(
         c(
             file.path("local", "data", c("daily_%s.rds", "weekly_%s.rds")), # cases
             file.path("local", "output", "score_%s.rds"), # scores
@@ -18,7 +18,14 @@ library(patchwork)
             file.path("local", "figures", "fig_panel_%s.png") # diagnostics
         ),
         .prov)
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("./R/pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
 } else commandArgs(trailingOnly = TRUE)
+
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
 # Load the raw data
 # Cases
@@ -26,16 +33,6 @@ daily_cases <- readRDS(.args[1])
 weekly_cases <- readRDS(.args[2])
 # Scores
 scores <- readRDS(.args[3])
-
-# Function to read forecasts and timings and rbind
-read_bulk_and_rbind <- function(files, out_type) {
-    # Extract the forecast target labels
-    forecast_targets <- gsub("^([^_]+)_([^_]+)_([^.]+)\\.rds$", "\\2", files)
-    setNames(files, forecast_targets) |> # Must always make sure the inputs are in that order
-        lapply(readRDS) |>
-        lapply(\(obj) rbindlist(obj[[out_type]])) |>
-        rbindlist(idcol = "type", fill = TRUE)
-}
 
 # Forecasts
 forecasts <- read_bulk_and_rbind(.args[4:6], "forecast")

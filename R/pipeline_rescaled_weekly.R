@@ -7,18 +7,24 @@ options(mc.cores = parallel::detectCores() - 1)
 
 .args <- if (interactive()) {
     .prov <- "GP"
-    sprintf(
+    .tmp <- sprintf(
         c(
             "local/data/weekly_%s.rds",
-            "R/pipeline_shared_inputs.R",
-            "local/output/forecast_special_%s.rds"),
+            "local/output/forecast_special_%s.rds"
+            ),
         .prov
-    )} else commandArgs(trailingOnly = TRUE)
+    )
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("R", "pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
+} else commandArgs(trailingOnly = TRUE)
+
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
 # inflate as.Date, because EpiNow2 seems to prefer Date over IDate
 dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
-
-source(.args[2])
 
 # EpiNow wants to work in terms of days, so we're going to pretend
 # as if weeks are days

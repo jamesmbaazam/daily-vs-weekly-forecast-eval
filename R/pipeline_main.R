@@ -5,19 +5,26 @@ library(parallel)
 library(bayesplot)
 
 .args <- if (interactive()) {
-	.scale <- "weekly"
-	.prov <- "GP"
-	tmp <- sprintf(file.path(
-		"local", c("data", "output"),
-  		c("%s_%s.rds", "forecast_%s_%s.rds")
-	), .scale, .prov)
-	c(tmp[1], file.path("R", "pipeline_shared_inputs.R"), tmp[2])
+    .scale <- "weekly"
+    .prov <- "GP"
+    .tmp <- sprintf(file.path(
+        "local", c("data", "output"),
+        c("%s_%s.rds", "forecast_%s_%s.rds")
+    ),
+    .scale,
+    .prov
+    )
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("./R/pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
 } else commandArgs(trailingOnly = TRUE)
+
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
 # inflate as.Date, because EpiNow2 seems to prefer Date over IDate
 dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)]
-
-source(.args[2])
 
 train_window <- 7*10
 test_window <- 7*2

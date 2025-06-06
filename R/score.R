@@ -4,12 +4,19 @@ library(scoringutils)
 
 .args <- if (interactive()) {
 	.prov <- "GP"
-	c(
+	.tmp <- c(
 	  sprintf(file.path("local", "data", "%s_%s.rds"), c("daily", "weekly"), .prov),
 	  sprintf(file.path("local", "output", "forecast_%s_%s.rds"), c("daily", "weekly", "rescale"), .prov),
 	  sprintf(file.path("local", "output", "score_%s.rds"), .prov)
 	)
+	c(.tmp[1:length(.tmp) - 1],
+	  file.path("./R/pipeline_shared_inputs.R"),
+	  .tmp[length(.tmp)]
+	)
 } else commandArgs(trailingOnly = TRUE)
+
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
 # True data
 daily_ref_dt <- readRDS(.args[1]) |> setnames("confirm", "true_value")
