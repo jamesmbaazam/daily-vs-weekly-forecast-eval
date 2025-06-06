@@ -18,7 +18,6 @@ weekly_ref_dt <- readRDS(.args[2]) |> setnames("confirm", "true_value")
 daily_fore_dt <- readRDS(.args[3])$forecast |> rbindlist() |> setnames("value", "prediction")
 weekly_fore_dt <- readRDS(.args[4])$forecast |> rbindlist() |> setnames("value", "prediction")
 rescale_fore_dt <- readRDS(.args[5])$forecast |> rbindlist() |> setnames("value", "prediction")
-
 ####################################
 # Functions
 ####################################

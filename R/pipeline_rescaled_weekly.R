@@ -229,10 +229,10 @@ res_dt <- lapply(slides, \(slide) {
         # Extract the forecast cases
         forecasts <- out$estimates$samples[
             variable == "reported_cases" & type == "forecast",
-            .(date, sample, value, slide = slide)
+            .(date, sample, value, slide = slide_rescaled)
         ]
 
-        diagnostics <- diagnostics[, slide := slide]
+        diagnostics <- diagnostics[, slide := slide_rescaled]
         diagnostics <- diagnostics[, stan_elapsed_time := stan_elapsed_time]
         #  NB: NEEDS REVIEW: Currently computes total time taken for warmup and sampling for all chains.
 
@@ -241,7 +241,7 @@ res_dt <- lapply(slides, \(slide) {
             forecast = list(forecasts),
             timing = list(
                 data.table(
-                    slide = slide,
+                    slide = slide_rescaled,
                     crude_run_time = crude_run_time,
                     stan_elapsed_time = stan_elapsed_time,
                     keep_run_time = last_run_time,
@@ -254,19 +254,19 @@ res_dt <- lapply(slides, \(slide) {
     } else {
         empty_forecast <- data.table(
             date = dt[train_window + slide, date + seq_len(test_window)],
-            sample = NA_integer_, value = NA_integer_, slide = slide
+            sample = NA_integer_, value = NA_integer_, slide = slide_rescaled
         )
         data.table(
             forecast = list(empty_forecast),
             timing = list(data.table(
-                slide = slide,
+                slide = slide_rescaled,
                 crude_run_time = lubridate::as.duration(NA),
                 stan_elapsed_time = lubridate::as.duration(NA),
                 keep_run_time = lubridate::as.duration(NA),
                 ratchets = NA_integer_
             )),
             diagnostics = list(data.table(
-                slide = slide,
+                slide = slide_rescaled,
                 "samples" = NA_integer_,
                 "max_rhat" = NA_integer_,
                 "divergent_transitions" = NA_integer_,
