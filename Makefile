@@ -57,7 +57,7 @@ ${DATDIR}/intermediate.rds: R/import.R ${DATDIR}/raw.csv | ${DATDIR}
 PROVINCES := GP WC EC KZN FS LP MP NC NW
 
 # Shared inputs
-SHARED_INPUTS = R/.R
+SHARED_INPUTS = R/pipeline_shared_inputs.R
 
 # define all possible extracts
 $(foreach agg,daily weekly,$(foreach tar,${PROVINCES},$(eval EXTRACTS += ${DATDIR}/${agg}_${tar}.rds)))
