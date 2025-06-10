@@ -91,7 +91,7 @@ ratchets_plot <- ggplot(data = daily_cases) +
     ) +
     scale_x_date(NULL, date_breaks = "month", date_labels = "%b '%y") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-    labs(x = "Date", y = "rachets")
+    labs(x = "Date", y = "ratchets")
 
 # Add the dates by slide
 diagnostics_dt <- diagnostics_dt[
