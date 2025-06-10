@@ -3,8 +3,6 @@ library(data.table)
 library(parallel)
 library(bayesplot)
 
-options(mc.cores = parallel::detectCores() - 1)
-
 .args <- if (interactive()) {
     .prov <- "GP"
     .tmp <- sprintf(
@@ -23,27 +21,10 @@ options(mc.cores = parallel::detectCores() - 1)
 # Load helper functions and shared model inputs
 source(.args[length(.args) - 1])
 
-# inflate as.Date, because EpiNow2 seems to prefer Date over IDate
-dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
 
-# EpiNow wants to work in terms of days, so we're going to pretend
-# as if weeks are days
-dt[, orig_date := date]
-
-fake_daily_dates <- seq.Date(
-  from = dt$orig_date[1],
-  by = "day",
-  length.out = length(dt$orig_date)
-)
-
-dt$date <- fake_daily_dates
-
-# Train and forecast windows
-train_window <- 10 # 10 weeks
-test_window <- 2 # 2 weeks
-
-slides <- seq(0, dt[, .N - (train_window + test_window)], by = test_window)
-
+####################################
+# Parameters
+####################################
 # when changing units, the mean, sd, and max scale the same way
 incubation_period <- LogNormal(mean = 5 / 7, sd = 1 / 7, max = 14 / 7)
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7201952/
@@ -62,133 +43,46 @@ delay <- incubation_period + reporting_delay
 # Rt prior
 rt_prior <- LogNormal(meanlog = 0.69, sdlog = 0.05) # mean = 2, sd = 0.1
 
+####################################
 # Observation model
+####################################
 obs <- obs_opts(
   week_effect = FALSE,
   likelihood = TRUE,
   return_likelihood = FALSE
 )
 
-stan <- stan_opts(
-	samples = 5000,
-	control = list(adapt_delta = 0.999, stepsize = 0.1)
-)
-
-####################################
-# Functions
-####################################
-#' Trim leading zeros
-#'
-#' @param init_dt the raw dt
-#'
-#' @returns
-#' @export
-#'
-#' @examples
-trim_leading_zero <- function (init_dt) {
-
-	first_non_zero <- init_dt[, which.max(confirm != 0)]
-	if (first_non_zero == 1) {
-		return(rbind(init_dt[1, .(date = date - 1, confirm = 0, orig_date = orig_date - 7)], init_dt))
-	} else {
-		# get all the zeros
-		zeros <- init_dt[, c(which(confirm == 0), .N)]
-		# find the last one before the first non-zero
-		from <- which.max(zeros > first_non_zero) - 1L
-		if (from == 0) {
-			return(rbind(init_dt[1, .(date = date - 1, confirm = 0, orig_date = orig_date - 7)], init_dt))
-		} else {
-			return(init_dt[zeros[from]:.N])
-		}
-	}
-}
-
-#' @title Get rstan diagnostics
-#' @description
-#' Summarise the diagnostic information contained in a `<stanfit>` object. If
-#' the object is not a stanfit object, return a data.table with NA values.
-#' This function is adapted from the `{epidist}` R package in
-#' https://github.com/epinowcast/epidist/pull/175/files
-#'
-#' @param fit A stanfit object
-#'
-#' @return A data.table containing the summarised diagnostics
-get_rstan_diagnostics <- function(fit) {
-    if (inherits(fit, "stanfit")) {
-        np <- bayesplot::nuts_params(fit)
-        divergent_indices <- np$Parameter == "divergent__"
-        treedepth_indices <- np$Parameter == "treedepth__"
-        # Calculating ESS (basic, bulk, and tail)
-        # ESS can only be calculated on the extracted variable in the form of a matrix with dimensions iterations x chains
-        # Extract the infections variable as that is used for forecasting
-        reports_posterior <- posterior::extract_variable_array(
-            posterior::as_draws_array(fit),
-            "reports" # NB: NEEDS REVIEW; is it rather infections??
-        )
-        # Calculate the different types of ess (basic, bulk, and tail)
-        fit_ess_basic <- posterior::ess_basic(reports_posterior)
-        fit_ess_bulk <- posterior::ess_bulk(reports_posterior)
-        fit_ess_tail <- posterior::ess_tail(reports_posterior)
-        fit_rhat <- posterior::rhat(reports_posterior)
-
-        diagnostics <- data.table(
-            "samples" = nrow(np) / length(unique(np$Parameter)),
-            "max_rhat" = round(max(bayesplot::rhat(fit), na.rm = TRUE), 3),
-            "divergent_transitions" = sum(np[divergent_indices, ]$Value),
-            "per_divergent_transitions" = mean(np[divergent_indices, ]$Value),
-            "max_treedepth" = max(np[treedepth_indices, ]$Value),
-            "ess_basic" = fit_ess_basic,
-            "ess_bulk" = fit_ess_bulk,
-            "ess_tail" = fit_ess_tail,
-            "rhat" = fit_rhat
-        )
-        diagnostics[, no_at_max_treedepth :=
-                        sum(np[treedepth_indices, ]$Value == max_treedepth)
-        ][, per_at_max_treedepth := no_at_max_treedepth / samples]
-    } else{
-        diagnostics <- data.table(
-            "samples" = NA,
-            "max_rhat" = NA,
-            "divergent_transitions" = NA,
-            "per_divergent_transitions" = NA,
-            "max_treedepth" = NA,
-            "no_at_max_treedepth" = NA,
-            "per_at_max_treedepth" = NA,
-            "ess_basic" = NA,
-            "ess_bulk" = NA,
-            "ess_tail" = NA,
-            "rhat" = NA
-        )
-    }
-    return(diagnostics[])
-}
-
-#' Define new parameter values for tuning the model
-#'
-#' @param stan_cfg Current stan parameter values
-#'
-#' @returns New stan parameter values
-#' @export
-#'
-#' @examples
-ratchet_control <- function(stan_cfg) within(stan_cfg, {
-    control <- within(control, {
-        adapt_delta <- adapt_delta + (1 - adapt_delta) * 0.5
-        max_treedepth <- max_treedepth + 2
-        stepsize <- stepsize * 0.5
-    })
-})
-
 ###############################
 # Pipeline
 ###############################
+
+# Prepare data
+# inflate as.Date, because EpiNow2 seems to prefer Date over IDate
+dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
+
+# EpiNow wants to work in terms of days, so we're going to pretend
+# as if weeks are days
+dt[, orig_date := date]
+
+fake_daily_dates <- seq.Date(
+  from = dt$orig_date[1],
+  by = "day",
+  length.out = length(dt$orig_date)
+)
+
+dt$date <- fake_daily_dates
+
+# Slides for fitting
+slides <- seq(0, dt[, .N - (train_window_rescaled + test_window_rescaled)], by = test_window_rescaled)
+
+# Fit models
 res_dt <- lapply(slides, \(slide) {
-    slice <- dt[seq_len(train_window) + slide] |> trim_leading_zero()
+    slice <- dt[seq_len(train_window_rescaled) + slide] |> trim_leading_zero()
     # Slides for fitting are in weeks but we need to rescale back to
     # days for aligning with other scales
     slide_rescaled <- slide * 7
     # Fit model
-    if (slice[, .N > test_window * 2]) {
+    if (slice[, .N > test_window_rescaled * 2]) {
         # diagnostics place holder to guarantee entry into while
         diagnostics <- data.table(
             divergent_transitions = 20,
@@ -217,7 +111,7 @@ res_dt <- lapply(slides, \(slide) {
                 generation_time = generation_time_opts(generation_time),
                 delays = delay_opts(delay),
                 rt = rt_opts(prior = rt_prior),
-                forecast = forecast_opts(horizon = test_window),
+                forecast = forecast_opts(horizon = test_window_rescaled),
                 obs = obs,
                 stan = next_stan
             )
@@ -259,7 +153,7 @@ res_dt <- lapply(slides, \(slide) {
         res_dt
     } else {
         empty_forecast <- data.table(
-            date = dt[train_window + slide, date + seq_len(test_window)],
+            date = dt[train_window_rescaled + slide, date + seq_len(test_window_rescaled)],
             sample = NA_integer_, value = NA_integer_, slide = slide_rescaled
         )
         data.table(

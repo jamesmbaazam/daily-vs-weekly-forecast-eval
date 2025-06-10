@@ -170,11 +170,25 @@ read_bulk_and_rbind <- function(files, out_type) {
 ####################################
 
 # Starting stan controls to be retuned
-control_opts <- list(adapt_delta = 0.8, max_treedepth = 10, stepsize = 0.1)
+control_opts <- list(
+	adapt_delta = 0.8,
+	max_treedepth = 10,
+	stepsize = 0.1
+)
 
 # EpiNow2 stan options
 stan <- stan_opts(
-    cores = parallel::detectCores() - 2,
     samples = 5000,
     control = control_opts
 )
+
+# Train and forecast windows for rescaled data
+train_window_rescaled <- 10 # 10 weeks
+test_window_rescaled <- 2 # 2 weeks
+
+# Train and forecast windows for daily and weekly data
+train_window <- 7*10
+test_window <- 7*2
+
+# Set the number of cores to use for stan parallelisation
+options(mc.cores = parallel::detectCores() - 1)
