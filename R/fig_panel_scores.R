@@ -43,9 +43,6 @@ runtimes <- read_bulk_and_rbind(.args[4:6], "timing")
 # Diagnostics
 diagnostics_dt <- fread(.args[7])
 
-# Other data
-# train_window <- 70 # This has to be the same as the one in the pipeline.R script
-
 #####
 #Plots
 ####
