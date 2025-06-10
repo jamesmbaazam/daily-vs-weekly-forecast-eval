@@ -128,7 +128,7 @@ all_scores: $(patsubst %,${OUTDIR}/score_%.rds,${PROVINCES} RSA)
 
 ## Main figure targets
 all_scores_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES} RSA)
-all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES} RSA)
+all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_diagnostics_%.png,${PROVINCES} RSA)
 all_dvsw_figs: $(patsubst %,${FIGDIR}/daily_vs_weekly_%.png,${PROVINCES})
 
 test: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${ONEPROV})
