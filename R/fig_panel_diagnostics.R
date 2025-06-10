@@ -43,10 +43,10 @@ forecasts_dt <- read_bulk_and_rbind(.args[3:5], "forecast")
 slide_dates_dictionary <- forecasts_dt[type == "weekly", .SD[1], by = "slide", .SDcols = c("date")]
 
 # Runtimes
-rachets_dt <- read_bulk_and_rbind(.args[3:5], "timing")
+ratchets_dt <- read_bulk_and_rbind(.args[3:5], "timing")
 
 # Add dates
-rachets_dt <- rachets_dt[
+ratchets_dt <- ratchets_dt[
     slide_dates_dictionary,
     on = "slide"
 ]
@@ -85,7 +85,7 @@ ratchets_plot <- ggplot(data = daily_cases) +
         aes(x = date, y = max(confirm))
     ) +
     geom_col(
-        data = rachets_dt,
+        data = ratchets_dt,
         aes(x = date, y = ratchets, fill = type),
         position = position_dodge2()
     ) +
