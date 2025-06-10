@@ -99,10 +99,10 @@ res_dt <- lapply(slides, \(slide) {
         # - divergences <= 10: all we have is that the divergences should be low, so we're assuming 10 here for now. See
         # https://mc-stan.org/learn-stan/diagnostics-warnings.html#divergent-transitions-after-warmup
         # - To prevent the loop from running forever, we also stop refitting after 15 tries and return/process the last fit.
-        while((diagnostics$divergent_transitions > 10 ||
+        while(ratchets < 16 &&
+              (diagnostics$divergent_transitions > 10 ||
               diagnostics$ess_bulk < 400 ||
-              diagnostics$rhat > 1.05) &&
-              ratchets < 16) {
+              diagnostics$rhat > 1.05)) {
             # The first ratchet counts as 0
             ratchets <- ratchets + 1
             # fit the model
