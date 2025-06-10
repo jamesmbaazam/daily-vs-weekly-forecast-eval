@@ -131,6 +131,9 @@ all_scores_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_scores_%.png,${PROVINCES
 all_diagnostics_panel_figs: $(patsubst %,${FIGDIR}/fig_panel_diagnostics_%.png,${PROVINCES} RSA)
 all_dvsw_figs: $(patsubst %,${FIGDIR}/daily_vs_weekly_%.png,${PROVINCES})
 
-test: $(patsubst %,${OUTDIR}/forecast_daily_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_weekly_%.rds,${ONEPROV}) $(patsubst %,${OUTDIR}/forecast_rescale_%.rds,${ONEPROV})
+# Combined target for all panel figures
+all_panel_figs: all_scores_panel_figs all_diagnostics_panel_figs
+
+test: ${FIGDIR}/fig_panel_scores_${ONEPROV}.png ${FIGDIR}/fig_panel_diagnostics_${ONEPROV}.png
 
 endrule: all_scores_panel_figs
