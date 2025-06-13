@@ -94,15 +94,28 @@ res_dt <- lapply(slides, \(slide) {
 		stan_elapsed_time <- 0
 		crude_run_time <- 0
 
-		# Sources for while loop conditions:
-		# - rhat <= 1.05: https://search.r-project.org/CRAN/refmans/rstan/html/Rhat.html AND https://arxiv.org/abs/1903.08008
-		# - ess_bulk >= 400: https://search.r-project.org/CRAN/refmans/rstan/html/Rhat.html AND https://arxiv.org/abs/1903.08008
-		# - divergences <= 10: all we have is that the divergences should be low, so we're assuming 10 here for now. See
+		# Rationale for while loop conditions:
+		# - divergences <= 2: all we have is that the divergences should be low, so we're using a more realistic value based on fitting the data many times and not achieving low enough divergences. See
 		# https://mc-stan.org/learn-stan/diagnostics-warnings.html#divergent-transitions-after-warmup
-		# - To prevent the loop from running forever, we also stop refitting after a specified number of tries and return/process the last fit.
-		while(ratchets < 6 &&
-              (diagnostics$divergent_transitions > 10 ||
-              diagnostics$ess_bulk < 400)) {
+		# - To prevent the loop from running forever, we also stop refitting after a specified number of ratchets and return/process the last fit.
+		# - By our computation, we need 11 ratchets to bump up adapt_delta from 0.88 to 0.99 in 0.25 increments of the previous value
+		#  R code:
+		#' initial_delta <- 0.8
+		# target_delta <- 0.99
+		# adapt_delta <- initial_delta
+		# steps <- 0
+		# adapt_delta_vec <- initial_delta
+		#
+		# while (adapt_delta < target_delta) {
+		#     adapt_delta <- min(0.990, adapt_delta + (1 - adapt_delta) * 0.25)
+		#     steps <- steps + 1
+		#     adapt_delta_vec <- append(adapt_delta_vec, adapt_delta)
+		# }
+		#
+		# steps
+		# adapt_delta_vec
+
+		while (diagnostics$divergent_transitions > 2 && ratchets < 12) {
 		    # The first ratchet counts as 0
 			ratchets <- ratchets + 1
 			# Fit the model
