@@ -134,12 +134,10 @@ get_rstan_diagnostics <- function(fit) {
 #' @examples
 ratchet_control <- function(stan_cfg) within(stan_cfg, {
     control <- within(control, {
-        adapt_delta <- adapt_delta + (1 - adapt_delta) * 0.5
-        max_treedepth <- max_treedepth + 2
-        stepsize <- stepsize * 0.5
+        # "Increasing adapt_delta beyond 0.99 and max_treedepth beyond 12 is seldom useful." (Source: https://mc-stan.org/learn-stan/diagnostics-warnings.html#bulk-and-tail-ess)
+        adapt_delta <- min(0.990, adapt_delta + (1 - adapt_delta) * 0.25)
     })
 })
-
 
 #' Load forecasts, diagnostics, or timings, bind by row, and add the type id
 #' as a column
@@ -179,7 +177,8 @@ control_opts <- list(
 # EpiNow2 stan options
 stan <- stan_opts(
     samples = 5000,
-    control = control_opts
+    control = control_opts,
+    cores = parallel::detectCores() - 1
 )
 
 # Train and forecast windows for rescaled data
@@ -189,6 +188,3 @@ test_window_rescaled <- 2 # 2 weeks
 # Train and forecast windows for daily and weekly data
 train_window <- 7*10
 test_window <- 7*2
-
-# Set the number of cores to use for stan parallelisation
-options(mc.cores = parallel::detectCores() - 1)
