@@ -3,8 +3,8 @@ library(ggplot2)
 library(patchwork)
 
 .args <- if (interactive()) {
-    .prov <- "NC"
-    sprintf(
+    .prov <- "GP"
+    .tmp <- sprintf(
         c(
             file.path("local", "data", c("daily_%s.rds", "weekly_%s.rds")), # cases
             file.path("local", "output", "score_%s.rds"), # scores
@@ -18,7 +18,14 @@ library(patchwork)
             file.path("local", "figures", "fig_panel_%s.png") # diagnostics
         ),
         .prov)
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("./R/pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
 } else commandArgs(trailingOnly = TRUE)
+
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
 # Load the raw data
 # Cases
@@ -27,28 +34,14 @@ weekly_cases <- readRDS(.args[2])
 # Scores
 scores <- readRDS(.args[3])
 
-# Function to read forecasts and timings and rbind
-read_bulk_and_rbind <- function(files, out_type) {
-    # Extract the forecast target labels
-    forecast_targets <- gsub("^([^_]+)_([^_]+)_([^.]+)\\.rds$", "\\2", files)
-    # Replace "special" with "rescale"; old name -> new name
-    forecast_targets <- ifelse(forecast_targets == "special", "rescale", forecast_targets)
-    setNames(files, forecast_targets) |> # Must always make sure the inputs are in that order 
-        lapply(readRDS) |>
-        lapply(\(obj) rbindlist(obj[[out_type]])) |>
-        rbindlist(idcol = "type", fill = TRUE)
-}
-
 # Forecasts
 forecasts <- read_bulk_and_rbind(.args[4:6], "forecast")
+
 # Runtimes
 runtimes <- read_bulk_and_rbind(.args[4:6], "timing")
 
 # Diagnostics
 diagnostics_dt <- fread(.args[7])
-
-# Other data
-train_window <- 70 # This has to be the same as the one in the pipeline.R script
 
 #####
 #Plots
@@ -73,7 +66,7 @@ cases_plt <- ggplot() +
 
 cases_plt
 
-########## 
+##########
 # Scores
 ##########
 # scores plot
@@ -177,7 +170,7 @@ panel_fig <- (cases_plt + score_plt + diagnostics_plt) &
     plot_layout(ncol = 1, guides = "collect", axes = "collect_x") &
     plot_annotation(title = paste(daily_cases$province[1])) &
     theme_minimal() &
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 
 ggsave(tail(.args, 1), panel_fig, bg = "white", width = 12, height = 6)

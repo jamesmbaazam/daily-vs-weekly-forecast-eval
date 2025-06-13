@@ -3,41 +3,28 @@ library(data.table)
 library(parallel)
 library(bayesplot)
 
-options(mc.cores = parallel::detectCores() - 1)
-
 .args <- if (interactive()) {
     .prov <- "GP"
-    sprintf(
+    .tmp <- sprintf(
         c(
             "local/data/weekly_%s.rds",
-            "R/pipeline_shared_inputs.R",
-            "local/output/forecast_special_%s.rds"),
+            "local/output/forecast_special_%s.rds"
+            ),
         .prov
-    )} else commandArgs(trailingOnly = TRUE)
+    )
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("R", "pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
+} else commandArgs(trailingOnly = TRUE)
 
-# inflate as.Date, because EpiNow2 seems to prefer Date over IDate
-dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
-source(.args[2])
 
-# EpiNow wants to work in terms of days, so we're going to pretend
-# as if weeks are days
-dt[, orig_date := date]
-
-fake_daily_dates <- seq.Date(
-  from = dt$orig_date[1],
-  by = "day",
-  length.out = length(dt$orig_date)
-)
-
-dt$date <- fake_daily_dates
-
-# Train and forecast windows
-train_window <- 10 # 10 weeks
-test_window <- 2 # 2 weeks
-
-slides <- seq(0, dt[, .N - (train_window + test_window)], by = test_window)
-
+####################################
+# Parameters
+####################################
 # when changing units, the mean, sd, and max scale the same way
 incubation_period <- LogNormal(mean = 5 / 7, sd = 1 / 7, max = 14 / 7)
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7201952/
@@ -56,7 +43,9 @@ delay <- incubation_period + reporting_delay
 # Rt prior
 rt_prior <- LogNormal(meanlog = 0.69, sdlog = 0.05) # mean = 2, sd = 0.1
 
+####################################
 # Observation model
+####################################
 obs <- obs_opts(
   week_effect = FALSE,
   likelihood = TRUE,
@@ -66,19 +55,67 @@ obs <- obs_opts(
 ###############################
 # Pipeline
 ###############################
+
+# Prepare data
+# inflate as.Date, because EpiNow2 seems to prefer Date over IDate
+dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
+
+# EpiNow wants to work in terms of days, so we're going to pretend
+# as if weeks are days
+dt[, orig_date := date]
+
+fake_daily_dates <- seq.Date(
+  from = dt$orig_date[1],
+  by = "day",
+  length.out = length(dt$orig_date)
+)
+
+dt$date <- fake_daily_dates
+
+# Slides for fitting
+slides <- seq(0, dt[, .N - (train_window_rescaled + test_window_rescaled)], by = test_window_rescaled)
+
+# Fit models
 res_dt <- lapply(slides, \(slide) {
-    slice <- dt[seq_len(train_window) + slide] |> trim_leading_zero()
+    slice <- dt[seq_len(train_window_rescaled) + slide] |> trim_leading_zero()
     # Slides for fitting are in weeks but we need to rescale back to
     # days for aligning with other scales
     slide_rescaled <- slide * 7
     # Fit model
-    if (slice[, .N > test_window * 2]) {
-        diagnostics <- data.table(divergent_transitions = 20) # place holder to guarantee entry into while
+    if (slice[, .N > test_window_rescaled * 2]) {
+        # diagnostics place holder to guarantee entry into while
+        diagnostics <- data.table(
+            divergent_transitions = 20,
+            ess_bulk = 200,
+            rhat = 2
+        )
         ratchets <- -1
         next_stan <- stan
         stan_elapsed_time <- 0
         crude_run_time <- 0
-        while (diagnostics$divergent_transitions < 11) {
+        # Rationale for while loop conditions:
+        # - divergences <= 2: all we have is that the divergences should be low, so we're using a more realistic value based on fitting the data many times and not achieving low enough divergences. See
+        # https://mc-stan.org/learn-stan/diagnostics-warnings.html#divergent-transitions-after-warmup
+        # - To prevent the loop from running forever, we also stop refitting after a specified number of ratchets and return/process the last fit.
+        # - By our computation, we need 11 ratchets to bump up adapt_delta from 0.88 to 0.99 in 0.25 increments of the previous value
+        #  R code:
+        #' initial_delta <- 0.8
+        # target_delta <- 0.99
+        # adapt_delta <- initial_delta
+        # steps <- 0
+        # adapt_delta_vec <- initial_delta
+        #
+        # while (adapt_delta < target_delta) {
+        #     adapt_delta <- min(0.990, adapt_delta + (1 - adapt_delta) * 0.25)
+        #     steps <- steps + 1
+        #     adapt_delta_vec <- append(adapt_delta_vec, adapt_delta)
+        # }
+        #
+        # steps
+        # adapt_delta_vec
+
+        while (diagnostics$divergent_transitions > 2 && ratchets < 12) {
+            # The first ratchet counts as 0
             ratchets <- ratchets + 1
             # fit the model
             out <- epinow(
@@ -86,33 +123,31 @@ res_dt <- lapply(slides, \(slide) {
                 generation_time = generation_time_opts(generation_time),
                 delays = delay_opts(delay),
                 rt = rt_opts(prior = rt_prior),
-                forecast = forecast_opts(horizon = test_window),
+                forecast = forecast_opts(horizon = test_window_rescaled),
                 obs = obs,
-                stan = so
+                stan = next_stan
             )
 
             # Extract the diagnostic information
             diagnostics <- get_rstan_diagnostics(out$estimates$fit)
-            stan_elapsed_time <- stan_elapsed_time + sum(
+            last_run_time <- sum(
                 rstan::get_elapsed_time(out$estimates$fit)
             )
+            stan_elapsed_time <- stan_elapsed_time + last_run_time
             crude_run_time <- crude_run_time + out$timing
             next_stan <- ratchet_control(next_stan)
         }
 
-        # Extract the forecasted cases
+        # Extract the forecast cases
         forecasts <- out$estimates$samples[
             variable == "reported_cases" & type == "forecast",
-            .(date, sample, value, slide = slide)
+            .(date, sample, value, slide = slide_rescaled)
         ]
-        # Extract the diagnostic information
-        diagnostics <- get_rstan_diagnostics(out$estimates$fit)
+
         diagnostics <- diagnostics[, slide := slide_rescaled]
-        # Extract and append stan's internal timing of the model fitting process.
-        stan_elapsed_time <- sum(rstan::get_elapsed_time(out$estimates$fit))
-        diagnostics <- diagnostics[, "stan_elapsed_time" := stan_elapsed_time] #  NB: NEEDS REVIEW: Currently computes total time taken for warmup and sampling for all chains.
-        # Extract the crude timing measured by epinow()
-        crude_run_time <- out$timing
+        diagnostics <- diagnostics[, stan_elapsed_time := stan_elapsed_time]
+        #  NB: NEEDS REVIEW: Currently computes total time taken for warmup and sampling for all chains.
+
         # Combine the forecast, timing and diagnostics
         res_dt <- data.table(
             forecast = list(forecasts),
@@ -120,38 +155,42 @@ res_dt <- lapply(slides, \(slide) {
                 data.table(
                     slide = slide_rescaled,
                     crude_run_time = crude_run_time,
-                    stan_elapsed_time = stan_elapsed_time
+                    stan_elapsed_time = stan_elapsed_time,
+                    keep_run_time = last_run_time,
+                    ratchets = ratchets
                 )
             ),
             diagnostics = list(diagnostics)
         )
+        res_dt
     } else {
         empty_forecast <- data.table(
-            date = dt[train_window + slide, date + seq_len(test_window)],
+            date = dt[train_window_rescaled + slide, date + seq_len(test_window_rescaled)],
             sample = NA_integer_, value = NA_integer_, slide = slide_rescaled
         )
-        res_dt <- data.table(
+        data.table(
             forecast = list(empty_forecast),
             timing = list(data.table(
                 slide = slide_rescaled,
                 crude_run_time = lubridate::as.duration(NA),
-                stan_elapsed_time = lubridate::as.duration(NA))
-            ),
+                stan_elapsed_time = lubridate::as.duration(NA),
+                keep_run_time = lubridate::as.duration(NA),
+                ratchets = NA_integer_
+            )),
             diagnostics = list(data.table(
                 slide = slide_rescaled,
-                "samples" = NA,
-                "max_rhat" = NA,
-                "divergent_transitions" = NA,
-                "per_divergent_transitions" = NA,
-                "max_treedepth" = NA,
-                "no_at_max_treedepth" = NA,
-                "per_at_max_treedepth" = NA,
-                "ess_basic" = NA,
-                "ess_bulk" = NA,
-                "ess_tail" = NA,
-                "stan_elapsed_time" = NA
-            )
-            )
+                "samples" = NA_integer_,
+                "max_rhat" = NA_integer_,
+                "divergent_transitions" = NA_integer_,
+                "per_divergent_transitions" = NA_integer_,
+                "max_treedepth" = NA_integer_,
+                "no_at_max_treedepth" = NA_integer_,
+                "per_at_max_treedepth" = NA_integer_,
+                "ess_basic" = NA_integer_,
+                "ess_bulk" = NA_integer_,
+                "ess_tail" = NA_integer_,
+                "rhat" = NA_integer_
+            ))
         )
     }
 }) |> rbindlist()

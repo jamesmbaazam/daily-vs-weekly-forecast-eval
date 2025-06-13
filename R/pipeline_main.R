@@ -5,25 +5,27 @@ library(parallel)
 library(bayesplot)
 
 .args <- if (interactive()) {
-	.scale <- "weekly"
-	.prov <- "GP"
-	tmp <- sprintf(file.path(
-		"local", c("data", "output"),
-  		c("%s_%s.rds", "forecast_%s_%s.rds")
-	), .scale, .prov)
-	c(tmp[1], file.path("R", "pipeline_shared_inputs.R"), tmp[2])
+    .scale <- "weekly"
+    .prov <- "GP"
+    .tmp <- sprintf(file.path(
+        "local", c("data", "output"),
+        c("%s_%s.rds", "forecast_%s_%s.rds")
+    ),
+    .scale,
+    .prov
+    )
+    c(.tmp[1:length(.tmp) - 1],
+      file.path("./R/pipeline_shared_inputs.R"),
+      .tmp[length(.tmp)]
+    )
 } else commandArgs(trailingOnly = TRUE)
 
-# inflate as.Date, because EpiNow2 seems to prefer Date over IDate
-dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)]
+# Load helper functions and shared model inputs
+source(.args[length(.args) - 1])
 
-source(.args[2])
-
-train_window <- 7*10
-test_window <- 7*2
-
-slides <- seq(0, dt[, .N - (train_window + test_window)], by = test_window)
-
+####################################
+# Parameters
+####################################
 # Incubation period
 # Get from epiparameter package doi:10.3390/jcm9020538
 sars_cov_incubation_dist <- epiparameter_db(
@@ -55,7 +57,9 @@ rt_prior <- LogNormal(meanlog = 0.69, sdlog = 0.05)
 # turn on/off week effect below; week effect is off for the weekly accumulated data.
 is_daily <- sub("//_*", "", basename(.args[1])) == "daily"
 
+####################################
 # Observation model
+####################################
 obs <- obs_opts(
   week_effect = ifelse(is_daily, TRUE, FALSE), # turn on week effect if data is on daily scale
   likelihood = TRUE,
@@ -65,6 +69,13 @@ obs <- obs_opts(
 ###############################
 # Pipeline
 ###############################
+# Prepare data
+dt <- readRDS(.args[1])[, .(date = as.Date(date), confirm)][!is.na(confirm)]
+
+# Slides for fitting
+slides <- seq(0, dt[, .N - (train_window + test_window)], by = test_window)
+
+# Fill missing dates
 view_dt <- fill_missing(
     dt, missing_dates = "accumulate", missing_obs = "accumulate"
 )
@@ -72,16 +83,41 @@ view_dt <- fill_missing(
 res_dt <- lapply(slides, \(slide) {
 	slice <- view_dt[seq_len(train_window) + slide] |> trim_leading_zero()
 	if (slice[, .N > (test_window * 2)]) {
-		diagnostics <- data.table(divergent_transitions = 20) # place holder to guarantee entry into while
+	   # diagnostics place holder to guarantee entry into while
+	    diagnostics <- data.table(
+	        divergent_transitions = 20,
+	        ess_bulk = 200,
+	        rhat = 2
+	    ) # place holder to guarantee entry into while
 		ratchets <- -1
 		next_stan <- stan
 		stan_elapsed_time <- 0
 		crude_run_time <- 0
 
-		while(diagnostics$divergent_transitions > 10) {
+		# Rationale for while loop conditions:
+		# - divergences <= 2: all we have is that the divergences should be low, so we're using a more realistic value based on fitting the data many times and not achieving low enough divergences. See
+		# https://mc-stan.org/learn-stan/diagnostics-warnings.html#divergent-transitions-after-warmup
+		# - To prevent the loop from running forever, we also stop refitting after a specified number of ratchets and return/process the last fit.
+		# - By our computation, we need 11 ratchets to bump up adapt_delta from 0.88 to 0.99 in 0.25 increments of the previous value
+		#  R code:
+		#' initial_delta <- 0.8
+		# target_delta <- 0.99
+		# adapt_delta <- initial_delta
+		# steps <- 0
+		# adapt_delta_vec <- initial_delta
+		#
+		# while (adapt_delta < target_delta) {
+		#     adapt_delta <- min(0.990, adapt_delta + (1 - adapt_delta) * 0.25)
+		#     steps <- steps + 1
+		#     adapt_delta_vec <- append(adapt_delta_vec, adapt_delta)
+		# }
+		#
+		# steps
+		# adapt_delta_vec
 
+		while (diagnostics$divergent_transitions > 2 && ratchets < 12) {
+		    # The first ratchet counts as 0
 			ratchets <- ratchets + 1
-
 			# Fit the model
 			out <- epinow(
 				data = slice,
@@ -101,7 +137,6 @@ res_dt <- lapply(slides, \(slide) {
 			stan_elapsed_time <- stan_elapsed_time + last_run_time
 			crude_run_time <- crude_run_time + out$timing
 			next_stan <- ratchet_control(next_stan)
-
 		}
 		# Extract the forecast cases
 		forecasts <- out$estimates$samples[
@@ -125,8 +160,7 @@ res_dt <- lapply(slides, \(slide) {
 					ratchets = ratchets
 		        )
 		    ),
-		    diagnostics = list(diagnostics),
-		    fit = ifelse(stan_elapsed_time < lubridate::duration(3), list(out$estimates$fit), list(NA)) # Only save the fit if the runtime is less than specified secs (for memory reasons; the fits are massive = 27 Gb ish)
+		    diagnostics = list(diagnostics)
 		)
 		res_dt
 	} else {
@@ -154,9 +188,9 @@ res_dt <- lapply(slides, \(slide) {
 				"per_at_max_treedepth" = NA,
 				"ess_basic" = NA,
 				"ess_bulk" = NA,
-				"ess_tail" = NA
-			)),
-			fit = list(NA)
+				"ess_tail" = NA,
+				"rhat" = NA
+			))
 		)
 	}
 })
